@@ -1,142 +1,146 @@
 #!/usr/bin/env python3
 """
-Weather and Stock Price Fetcher
-Gets current weather for New York and latest Microsoft (MSFT) stock price.
+London Weather & Microsoft Stock Price Fetcher
+Retrieves current weather for London and Microsoft (MSFT) stock price.
+No API keys required for basic functionality.
 """
 
 import requests
-import os
 from datetime import datetime
 
 
-def get_weather_ny():
-    """Fetch current weather for New York using Open-Meteo API (no key required)."""
-    # New York City coordinates
-    lat, lon = 40.7128, -74.0060
+def get_london_weather():
+    """
+    Fetch current weather for London from wttr.in.
     
-    url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "current": ["temperature_2m", "relative_humidity_2m", "weather_code", "wind_speed_10m"],
-        "temperature_unit": "fahrenheit",
-        "wind_speed_unit": "mph",
-        "timezone": "America/New_York"
-    }
+    Returns:
+        dict: Weather data including temperature, condition, humidity, and wind
+    """
+    # Using wttr.in format codes:
+    # %l = location, %c = condition (emoji), %t = temperature,
+    # %h = humidity, %w = wind
+    url = "https://wttr.in/London?format=%l:+%c+%t+%h+%w"
     
-    response = requests.get(url, params=params, timeout=30)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        
+        return {
+            "location": "London",
+            "data": response.text.strip(),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "success": True
+        }
     
-    current = data["current"]
-    weather_code = current["weather_code"]
-    
-    # Weather code mapping (simplified)
-    weather_descriptions = {
-        0: "Clear sky",
-        1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-        45: "Foggy", 48: "Depositing rime fog",
-        51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
-        61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
-        71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow",
-        95: "Thunderstorm"
-    }
-    
-    weather_desc = weather_descriptions.get(weather_code, "Unknown")
-    
-    return {
-        "temperature": current["temperature_2m"],
-        "humidity": current["relative_humidity_2m"],
-        "wind_speed": current["wind_speed_10m"],
-        "condition": weather_desc
-    }
+    except requests.RequestException as e:
+        return {
+            "location": "London",
+            "error": str(e),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "success": False
+        }
 
 
-def get_msft_stock():
-    """Fetch latest Microsoft stock price using Yahoo Finance API (unofficial)."""
-    # Using Yahoo Finance quote endpoint
+def get_microsoft_stock():
+    """
+    Fetch Microsoft (MSFT) stock price from Yahoo Finance API.
+    
+    Returns:
+        dict: Stock data including current price, change, and market status
+    """
     symbol = "MSFT"
+    # Using Yahoo Finance's query API (no key required)
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
     
-    params = {
-        "interval": "1d",
-        "range": "1d"
-    }
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.0"
-    }
-    
-    response = requests.get(url, params=params, headers=headers, timeout=30)
-    response.raise_for_status()
-    data = response.json()
-    
-    result = data["chart"]["result"][0]
-    meta = result["meta"]
-    
-    # Get the latest price
-    timestamps = result.get("timestamp", [])
-    closes = result["indicators"]["quote"][0].get("close", [])
-    
-    if closes:
-        latest_price = closes[-1]
-    else:
-        latest_price = meta.get("regularMarketPrice", "N/A")
-    
-    previous_close = meta.get("previousClose", "N/A")
-    
-    # Calculate change
-    if isinstance(latest_price, (int, float)) and isinstance(previous_close, (int, float)):
-        change = latest_price - previous_close
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Extract relevant data from the response
+        quote = data['chart']['result'][0]
+        meta = quote['meta']
+        
+        current_price = meta['regularMarketPrice']
+        previous_close = meta['previousClose']
+        change = current_price - previous_close
         change_percent = (change / previous_close) * 100
-    else:
-        change = "N/A"
-        change_percent = "N/A"
+        
+        return {
+            "symbol": symbol,
+            "company": "Microsoft Corporation",
+            "price": current_price,
+            "previous_close": previous_close,
+            "change": change,
+            "change_percent": change_percent,
+            "currency": meta['currency'],
+            "market_state": meta['marketState'],
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "success": True
+        }
     
-    return {
-        "symbol": symbol,
-        "price": latest_price,
-        "change": change,
-        "change_percent": change_percent,
-        "currency": meta.get("currency", "USD"),
-        "exchange": meta.get("exchangeName", "Unknown")
-    }
+    except (requests.RequestException, KeyError, IndexError) as e:
+        return {
+            "symbol": symbol,
+            "error": str(e),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "success": False
+        }
+
+
+def format_stock_display(stock_data):
+    """
+    Format stock data for clean display.
+    
+    Args:
+        stock_data (dict): Stock information dictionary
+        
+    Returns:
+        str: Formatted stock information
+    """
+    if not stock_data["success"]:
+        return f"❌ Error fetching stock data: {stock_data['error']}"
+    
+    # Determine if price went up or down
+    change_symbol = "📈" if stock_data["change"] >= 0 else "📉"
+    change_sign = "+" if stock_data["change"] >= 0 else ""
+    
+    output = f"""
+📊 {stock_data['company']} ({stock_data['symbol']})
+💰 Current Price: ${stock_data['price']:.2f} {stock_data['currency']}
+{change_symbol} Change: {change_sign}${stock_data['change']:.2f} ({change_sign}{stock_data['change_percent']:.2f}%)
+📍 Previous Close: ${stock_data['previous_close']:.2f}
+🕐 Market Status: {stock_data['market_state']}
+"""
+    return output.strip()
 
 
 def main():
-    """Main function to fetch and display weather and stock data."""
-    print("=" * 50)
-    print(f"Weather & Stock Report - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 50)
+    """Main function to display London weather and Microsoft stock price."""
+    print("=" * 60)
+    print(f"London Weather & Microsoft Stock - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
     
-    # Get weather
-    print("\n🌤️  New York Weather")
-    print("-" * 30)
-    try:
-        weather = get_weather_ny()
-        print(f"Temperature: {weather['temperature']:.1f}°F")
-        print(f"Condition: {weather['condition']}")
-        print(f"Humidity: {weather['humidity']}%")
-        print(f"Wind Speed: {weather['wind_speed']} mph")
-    except Exception as e:
-        print(f"Error fetching weather: {e}")
+    # Get London weather
+    print("\n🌤️  LONDON WEATHER")
+    print("-" * 60)
+    weather = get_london_weather()
     
-    # Get stock price
-    print("\n📈 Microsoft (MSFT) Stock")
-    print("-" * 30)
-    try:
-        stock = get_msft_stock()
-        print(f"Price: ${stock['price']:.2f} {stock['currency']}")
-        if isinstance(stock['change'], (int, float)):
-            change_symbol = "📈" if stock['change'] >= 0 else "📉"
-            print(f"Change: {change_symbol} ${stock['change']:.2f} ({stock['change_percent']:+.2f}%)")
-        else:
-            print(f"Change: N/A")
-        print(f"Exchange: {stock['exchange']}")
-    except Exception as e:
-        print(f"Error fetching stock price: {e}")
+    if weather["success"]:
+        print(weather["data"])
+    else:
+        print(f"❌ Error: {weather['error']}")
     
-    print("\n" + "=" * 50)
+    # Get Microsoft stock price
+    print("\n" + "=" * 60)
+    print("📈 MICROSOFT STOCK (MSFT)")
+    print("-" * 60)
+    stock = get_microsoft_stock()
+    print(format_stock_display(stock))
+    
+    print("\n" + "=" * 60)
+    print(f"Data retrieved at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
